@@ -9,33 +9,27 @@ fork (the Android companion). This is the desktop app.
 and discipline. The app reports **probability of passing** with a range — never an
 invented score.
 
-## Status
+## Features
 
-**Phase 0 — done:** desktop + AnkiDroid both build & run from source on one Rust
-engine; a trivial Rust change is verified end-to-end on desktop; exam stated above.
-
-**Phase 1 (Wednesday) — in progress. No AI.**
-- [x] Rust **mastery query**: per-topic cards-mastered + avg recall, fast on 50k cards (new protobuf, Rust + Python tests, undo-safe).
-- [x] **Study dashboard** with three always-shown scores — **Memory**, **Performance** (placeholder until Phase 3), **Readiness** — each with a range.
-- [x] **Memory** score, honest (mean FSRS recall + confidence range).
-- [x] **Readiness v1**, honest: **P(pass)** (calibrated to reported practice-exam outcomes, *not* a score) + range + coverage %, abstains under the give-up rule.
-- [x] **Over-confidence view**: every score projected forward with no study at **today / +5d / +10d**.
-- [x] **Coverage map v1** (% of the Step 1 outline seen).
-- [x] **Admin / simulation mode**: bulk-set FSRS state, advance days, reset cards (incl. random %) — dev tooling to exercise the dashboard.
-- [x] **Android parity**: the dashboard + admin mode run on the AnkiDroid fork via the shared Rust engine.
-- [ ] **Manual mode toggle** (long-term ↔ short-term).
-- [ ] **Forced UI randomization** feature (toggleable; ablated in Phase 3).
-- [ ] **Desktop installer** that runs on a clean machine.
-
-> **Give-up rule:** no readiness score until **≥ 200 graded reviews** *and*
-> **≥ 50% outline coverage**; below either line, abstain and show what's missing.
+- **Study dashboard** — three always-shown scores, each with an honest range:
+  - **Memory** — mean FSRS recall over the cards you've studied.
+  - **Performance** — chance of answering a *new* exam-style question right (placeholder until the held-out model).
+  - **Readiness** — a **calibrated probability of passing** (≥ 60 % cut score), *not* a predicted score.
+- **Over-confidence view** — every score is also projected forward with **no further study** at **today / +5 days / +10 days**, so decay is visible.
+- **Coverage map** — % of the First Aid outline you've actually seen.
+- **Give-up rule** — Readiness abstains until **≥ 200 graded reviews** *and* **≥ 50 % coverage**, showing what's missing instead of guessing.
+- **Mastery query** — fast per-topic cards-mastered + average recall (Rust; undo-safe).
+- **Manual mode toggle** — switch between long-term and short-term study framing.
+- **Forced UI randomization** — randomizes card fonts to stop you memorizing a card's *look* instead of its content (toggleable).
+- **Admin / simulation mode** — dev tooling to bulk-set FSRS state, advance days, and reset cards, to exercise the dashboard without weeks of reviews.
 
 ## Build & run
 
 Needs [rustup](https://rustup.rs/) (toolchain pinned in `rust-toolchain.toml`).
 
 ```bash
-./run
+./run                    # build & launch from source
+tools/build-installer    # build a distributable .dmg (macOS) under out/installer/dist
 ```
 
 Full instructions: [`docs/development.md`](./docs/development.md). Android build +
