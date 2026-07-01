@@ -16,11 +16,167 @@ service StatsService {
   rpc Graphs(GraphsRequest) returns (GraphsResponse);
   rpc GetGraphPreferences(generic.Empty) returns (GraphPreferences);
   rpc SetGraphPreferences(GraphPreferences) returns (generic.Empty);
+  // USMLE project addition: per-topic mastery aggregation (the "mastery query").
+  rpc MasteryByTopic(MasteryByTopicRequest) returns (MasteryByTopicResponse);
+  // USMLE project addition: the study dashboard (Memory + Coverage + Readiness).
+  rpc StudyDashboard(StudyDashboardRequest) returns (StudyDashboardResponse);
+  // USMLE project addition (dev/admin "simulation mode"): bulk-set FSRS state on
+  // matched cards, so a demo collection can be driven into any memory state.
+  rpc AdminSetFsrs(AdminSetFsrsRequest) returns (AdminOpResponse);
+  // USMLE project addition (dev/admin "simulation mode"): simulate N days passing
+  // with no study by shifting matched cards' last-review time back N days.
+  rpc AdminAdvanceDays(AdminAdvanceDaysRequest) returns (AdminOpResponse);
+  // USMLE project addition (dev/admin "simulation mode"): reset matched cards to
+  // "not learned yet" (new), optionally a random percentage of them.
+  rpc AdminResetCards(AdminResetCardsRequest) returns (AdminOpResponse);
 }
 
 // Implicitly includes any of the above methods that are not listed in the
 // backend service.
 service BackendStatsService {}
+
+// ---- USMLE project: mastery query -----------------------------------------
+// Aggregates per-card FSRS state into per-topic stats, where a "topic" is a
+// tag at a configurable prefix + depth (default: First Aid section tags).
+
+message MasteryByTopicRequest {
+  // Optional card search to scope the query (empty = whole collection).
+  string search = 1;
+  // Only tags starting with this prefix are treated as topics
+  // (e.g. "#AK_Step1_v11::#FirstAid::"). Empty = every top-level tag is a topic.
+  string tag_prefix = 2;
+  // How many "::"-separated components after the prefix form the topic key.
+  // 0 is treated as 1. Default caller value: 1 (the section level).
+  uint32 topic_depth = 3;
+}
+
+message TopicMastery {
+  // Full topic tag path (prefix + the first `topic_depth` components).
+  string topic = 1;
+  // Total cards under this topic (includes new/unseen cards).
+  uint32 total_cards = 2;
+  // Cards considered "mastered" = review cards with interval >= 21 days.
+  uint32 cards_mastered = 3;
+  // Mean FSRS retrievability (0..1) across all cards in the topic;
+  // new/unseen cards (no memory state) count as 0.
+  float average_recall = 4;
+}
+
+message MasteryByTopicResponse {
+  repeated TopicMastery topics = 1;
+}
+
+// ---- USMLE project: study dashboard (Memory + Coverage + Readiness) --------
+
+message StudyDashboardRequest {
+  // Optional card search to scope the dashboard (empty = whole collection).
+  string search = 1;
+  // Tag prefix that defines the outline topics (e.g. First Aid sections).
+  string tag_prefix = 2;
+  // Components after the prefix that form a topic key. 0 is treated as 1.
+  uint32 topic_depth = 3;
+  // Days-from-now to project readiness at. Empty -> [0, 5] (today and +5 days).
+  repeated uint32 readiness_horizons_days = 4;
+  // Give-up rule: minimum all-time graded reviews. 0 -> default 200.
+  uint32 min_graded_reviews = 5;
+  // Give-up rule: minimum outline coverage (0..1). 0 -> default 0.5.
+  float min_coverage = 6;
+}
+
+// Memory ~= aggregated FSRS recall over studied cards, with honest uncertainty.
+message DashboardMemoryHorizon {
+  // Days forward with no further study (0 = now).
+  uint32 days = 1;
+  // Mean recall over the studied cards at this horizon.
+  float mean_recall = 2;
+}
+
+message DashboardMemory {
+  float mean_recall = 1;
+  // Normal-approx confidence interval on the mean (narrows as data grows).
+  float ci_low = 2;
+  float ci_high = 3;
+  uint32 studied_cards = 4;
+  // Ungated over-confidence view: mean recall over the SAME studied cards
+  // projected forward with no further study, one entry per requested horizon
+  // (days 0 = now). Always reported (not blocked by the give-up rule) because
+  // it is a memory fact, not a readiness claim.
+  repeated DashboardMemoryHorizon horizons = 5;
+}
+
+message DashboardCoverage {
+  // Outline cards seen at least once / total outline cards (0..1).
+  float fraction = 1;
+  uint32 cards_seen = 2;
+  uint32 total_cards = 3;
+}
+
+message DashboardReadiness {
+  uint32 horizon_days = 1;
+  float p_pass = 2;
+  float range_low = 3;
+  float range_high = 4;
+  // Coverage-weighted mean projected recall feeding p_pass (unseen = 0).
+  float mean_projected_recall = 5;
+}
+
+message StudyDashboardResponse {
+  DashboardMemory memory = 1;
+  DashboardCoverage coverage = 2;
+  uint32 graded_reviews = 3;
+  // Give-up rule outcome: readiness is only populated when this is true.
+  bool readiness_available = 4;
+  // Human-readable list of what is still missing when abstaining.
+  repeated string readiness_blocked_reasons = 5;
+  // One entry per requested horizon; empty when abstaining.
+  repeated DashboardReadiness readiness = 6;
+  // Over-confidence signal: fraction of studied cards with high recall now but
+  // low stability (recallable today, will decay fast).
+  float fragile_fraction = 7;
+  // Per-topic rows (the coverage/mastery map).
+  repeated TopicMastery topics = 8;
+  // Single best next thing to study (a topic), per the honesty rules.
+  string next_best_topic = 9;
+}
+
+// ---- USMLE project: admin / simulation mode --------------------------------
+// Developer tooling to set up demo/test states. NOT part of the honest scoring
+// path; these mutate the collection directly and are gated behind a UI toggle.
+
+message AdminSetFsrsRequest {
+  // Cards to affect (empty = whole collection).
+  string search = 1;
+  // FSRS stability in days (S). Clamped to a small positive minimum.
+  float stability = 2;
+  // FSRS difficulty (D), clamped to 1..10.
+  float difficulty = 3;
+  // Target current retrievability (R), 0..1. Applied by back-dating the card's
+  // last-review time so that R now == this value for the given stability.
+  float target_retrievability = 4;
+  // Randomly apply to this percentage (1..100) of the matched cards.
+  // 0 or >=100 means "all matched cards".
+  uint32 sample_percent = 5;
+}
+
+message AdminAdvanceDaysRequest {
+  // Cards to affect (empty = whole collection).
+  string search = 1;
+  // Number of days of "no study" to simulate (shifts last-review time back).
+  uint32 days = 2;
+}
+
+message AdminResetCardsRequest {
+  // Cards to affect (empty = whole collection).
+  string search = 1;
+  // Randomly reset this percentage (1..100) of the matched cards to new.
+  // 0 or >=100 means "all matched cards".
+  uint32 sample_percent = 2;
+}
+
+message AdminOpResponse {
+  // Number of cards modified.
+  uint32 updated = 1;
+}
 
 message ReviewLogs {
   repeated CardStatsResponse.StatsRevlogEntry entries = 1;

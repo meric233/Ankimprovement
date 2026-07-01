@@ -1028,6 +1028,93 @@ class Collection(DeprecatedNamesMixin):
     def studied_today(self) -> str:
         return self._backend.studied_today()
 
+    def mastery_by_topic(
+        self,
+        *,
+        search: str = "",
+        tag_prefix: str = "",
+        topic_depth: int = 1,
+    ) -> Sequence[stats_pb2.TopicMastery]:
+        """Per-topic mastery stats (USMLE project "mastery query").
+
+        A "topic" is a tag at the given ``tag_prefix`` and ``topic_depth``
+        (number of ``::`` components after the prefix). Each row reports the
+        total cards, the number mastered (review cards with interval >= 21
+        days), and the mean FSRS retrievability (new cards count as 0).
+        """
+        return self._backend.mastery_by_topic(
+            search=search, tag_prefix=tag_prefix, topic_depth=topic_depth
+        )
+
+    def study_dashboard(
+        self,
+        *,
+        search: str = "",
+        tag_prefix: str = "",
+        topic_depth: int = 1,
+        readiness_horizons_days: Sequence[int] = (),
+        min_graded_reviews: int = 0,
+        min_coverage: float = 0.0,
+    ) -> stats_pb2.StudyDashboardResponse:
+        """The study dashboard: Memory, Coverage, and (honest) Readiness.
+
+        Readiness is projected to each horizon in ``readiness_horizons_days``
+        (default ``[0, 5]`` = today and "+5 days, no studying") and abstains
+        until the give-up rule (``min_graded_reviews`` reviews AND
+        ``min_coverage`` outline coverage) is met. ``0`` thresholds use the
+        defaults (200 reviews, 50% coverage).
+        """
+        return self._backend.study_dashboard(
+            search=search,
+            tag_prefix=tag_prefix,
+            topic_depth=topic_depth,
+            readiness_horizons_days=readiness_horizons_days,
+            min_graded_reviews=min_graded_reviews,
+            min_coverage=min_coverage,
+        )
+
+    def admin_set_fsrs(
+        self,
+        *,
+        search: str = "",
+        stability: float,
+        difficulty: float,
+        target_retrievability: float,
+        sample_percent: int = 0,
+    ) -> int:
+        """Dev/admin simulation: bulk-set FSRS state on matched cards.
+
+        Sets stability (days) and difficulty (1-10) directly, and back-dates the
+        last-review time so current retrievability equals
+        ``target_retrievability`` (0-1). Undoable. Empty ``search`` = all cards.
+        ``sample_percent`` (1-100) randomly applies to that fraction of the
+        matched cards; 0 means all of them. Returns the number of cards modified.
+        """
+        return self._backend.admin_set_fsrs(
+            search=search,
+            stability=stability,
+            difficulty=difficulty,
+            target_retrievability=target_retrievability,
+            sample_percent=sample_percent,
+        )
+
+    def admin_advance_days(self, *, search: str = "", days: int) -> int:
+        """Dev/admin simulation: shift matched cards' last-review time back
+        ``days`` days, simulating that much elapsed time with no study (recall
+        decays, review-card due dates advance). Undoable. Returns the number of
+        cards modified."""
+        return self._backend.admin_advance_days(search=search, days=days)
+
+    def admin_reset_cards(self, *, search: str = "", sample_percent: int = 0) -> int:
+        """Dev/admin simulation: reset matched cards to "not learned yet" (new),
+        clearing FSRS state and returning them to the new queue. Undoable. Empty
+        ``search`` = all cards. ``sample_percent`` (1-100) randomly resets that
+        fraction of the matched cards; 0 means all of them. Returns the number of
+        cards modified."""
+        return self._backend.admin_reset_cards(
+            search=search, sample_percent=sample_percent
+        )
+
     # Undo
     ##########################################################################
 

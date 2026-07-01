@@ -179,6 +179,21 @@ impl SqliteStorage {
             .collect()
     }
 
+    /// All-time count of graded reviews (a real button press), excluding manual
+    /// reschedules. Used by the study dashboard's give-up rule.
+    pub(crate) fn graded_review_count(&self) -> Result<u32> {
+        self.db
+            .prepare_cached("SELECT count() FROM revlog WHERE type != ? AND type != ?")?
+            .query_row(
+                [
+                    RevlogReviewKind::Manual as i64,
+                    RevlogReviewKind::Rescheduled as i64,
+                ],
+                |row| row.get(0),
+            )
+            .map_err(Into::into)
+    }
+
     pub(crate) fn studied_today(&self, day_cutoff: TimestampSecs) -> Result<StudiedToday> {
         let start = day_cutoff.adding_secs(-86_400).as_millis();
         self.db

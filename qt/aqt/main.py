@@ -1172,6 +1172,7 @@ title="{}" {}>{}</button>""".format(
             ("b", self.onBrowse),
             ("t", self.onStats),
             ("Shift+t", self.onStats),
+            ("Shift+r", self.onReadiness),
             ("y", self.on_sync_button_clicked),
         ]
         self.applyShortcuts(globalShortcuts)
@@ -1311,6 +1312,46 @@ title="{}" {}>{}</button>""".format(
         else:
             aqt.dialogs.open("NewDeckStats", self)
 
+    def onReadiness(self) -> None:
+        aqt.dialogs.open("Readiness", self)
+
+    # USMLE project: Admin / simulation mode (dev tooling)
+    def _admin_mode_enabled(self) -> bool:
+        return bool(self.col and self.col.get_config("usmleAdminMode", False))
+
+    def _sync_admin_menu(self) -> None:
+        enabled = self._admin_mode_enabled()
+        self.actionAdminMode.setChecked(enabled)
+        self.actionAdminTools.setEnabled(enabled)
+
+    def onToggleAdminMode(self, checked: bool) -> None:
+        if not self.col:
+            return
+        self.col.set_config("usmleAdminMode", checked)
+        self.actionAdminTools.setEnabled(checked)
+
+    def onAdminSimulation(self) -> None:
+        if not self._admin_mode_enabled():
+            return
+        aqt.dialogs.open("AdminSimulation", self)
+
+    # USMLE project: study-mode toggle (SPOV1 long-term learning <-> short-term
+    # performance). Stored in collection config so it syncs across devices. For
+    # now it gates the SPOV2 difficulty-gated font randomization; other
+    # long-term-vs-short-term features can hang off the same switch later.
+    def _learning_mode_enabled(self) -> bool:
+        return bool(
+            self.col and self.col.get_config("usmleStudyMode", "learning") == "learning"
+        )
+
+    def _sync_study_mode_menu(self) -> None:
+        self.actionLearningMode.setChecked(self._learning_mode_enabled())
+
+    def onToggleLearningMode(self, checked: bool) -> None:
+        if not self.col:
+            return
+        self.col.set_config("usmleStudyMode", "learning" if checked else "performance")
+
     def onPrefs(self) -> None:
         aqt.dialogs.open("Preferences", self)
 
@@ -1447,6 +1488,34 @@ title="{}" {}>{}</button>""".format(
         qconnect(m.actionNoteTypes.triggered, self.onNoteTypes)
         qconnect(m.action_check_for_updates.triggered, self.on_check_for_updates)
         qconnect(m.actionPreferences.triggered, self.onPrefs)
+
+        # Tools > USMLE project: study-mode toggle (SPOV1). Checked = long-term
+        # learning mode (desirable-difficulty features on); unchecked = short-term
+        # performance mode.
+        self.actionLearningMode = QAction(self)
+        self.actionLearningMode.setText("Long-term learning mode")
+        self.actionLearningMode.setToolTip(
+            "On: enable desirable-difficulty study features (e.g. font "
+            "randomization on easy cards). Off: short-term performance mode."
+        )
+        self.actionLearningMode.setCheckable(True)
+        qconnect(self.actionLearningMode.toggled, self.onToggleLearningMode)
+        m.menuTools.addSeparator()
+        m.menuTools.addAction(self.actionLearningMode)
+        qconnect(m.menuTools.aboutToShow, self._sync_study_mode_menu)
+
+        # Tools > USMLE project: Admin / simulation mode (dev tooling)
+        self.actionAdminMode = QAction(self)
+        self.actionAdminMode.setText("Admin: simulation mode")
+        self.actionAdminMode.setCheckable(True)
+        qconnect(self.actionAdminMode.toggled, self.onToggleAdminMode)
+        self.actionAdminTools = QAction(self)
+        self.actionAdminTools.setText("Admin: simulation tools…")
+        qconnect(self.actionAdminTools.triggered, self.onAdminSimulation)
+        m.menuTools.addSeparator()
+        m.menuTools.addAction(self.actionAdminMode)
+        m.menuTools.addAction(self.actionAdminTools)
+        qconnect(m.menuTools.aboutToShow, self._sync_admin_menu)
 
         # View
         qconnect(

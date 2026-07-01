@@ -422,6 +422,7 @@ def is_sveltekit_page(path: str) -> bool:
         "import-csv",
         "import-page",
         "image-occlusion",
+        "readiness",
     ]
 
 
@@ -746,6 +747,9 @@ exposed_backend_list = [
     "graphs",
     "get_graph_preferences",
     "set_graph_preferences",
+    # USMLE project additions
+    "mastery_by_topic",
+    "study_dashboard",
     # TagsService
     "complete_tag",
     # ImageOcclusionService

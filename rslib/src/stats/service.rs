@@ -36,6 +36,41 @@ impl crate::services::StatsService for Collection {
     ) -> error::Result<()> {
         self.set_graph_preferences(input)
     }
+
+    fn mastery_by_topic(
+        &mut self,
+        input: anki_proto::stats::MasteryByTopicRequest,
+    ) -> error::Result<anki_proto::stats::MasteryByTopicResponse> {
+        self.mastery_by_topic(&input)
+    }
+
+    fn study_dashboard(
+        &mut self,
+        input: anki_proto::stats::StudyDashboardRequest,
+    ) -> error::Result<anki_proto::stats::StudyDashboardResponse> {
+        self.study_dashboard(&input)
+    }
+
+    fn admin_set_fsrs(
+        &mut self,
+        input: anki_proto::stats::AdminSetFsrsRequest,
+    ) -> error::Result<anki_proto::stats::AdminOpResponse> {
+        self.admin_set_fsrs(&input).map(|o| o.output)
+    }
+
+    fn admin_advance_days(
+        &mut self,
+        input: anki_proto::stats::AdminAdvanceDaysRequest,
+    ) -> error::Result<anki_proto::stats::AdminOpResponse> {
+        self.admin_advance_days(&input).map(|o| o.output)
+    }
+
+    fn admin_reset_cards(
+        &mut self,
+        input: anki_proto::stats::AdminResetCardsRequest,
+    ) -> error::Result<anki_proto::stats::AdminOpResponse> {
+        self.admin_reset_cards(&input).map(|o| o.output)
+    }
 }
 
 impl From<RevlogReviewKind> for i32 {

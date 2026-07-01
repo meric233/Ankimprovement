@@ -372,6 +372,13 @@ class Toolbar:
                 tip=tr.actions_shortcut_key(val="T"),
                 id="stats",
             ),
+            self.create_link(
+                "readiness",
+                "Readiness",
+                self._readinessLinkHandler,
+                tip=tr.actions_shortcut_key(val="Shift+R"),
+                id="readiness",
+            ),
         ]
 
         links.append(self._create_sync_link())
@@ -449,6 +456,9 @@ class Toolbar:
 
     def _statsLinkHandler(self) -> None:
         self.mw.onStats()
+
+    def _readinessLinkHandler(self) -> None:
+        self.mw.onReadiness()
 
     def _syncLinkHandler(self) -> None:
         self.mw.on_sync_button_clicked()

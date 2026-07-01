@@ -7,7 +7,7 @@ use anki_i18n::I18n;
 pub fn answer_button_time(seconds: f32, tr: &I18n) -> String {
     let span = Timespan::from_secs(seconds).natural_span();
     let amount = span.as_rounded_unit_for_answer_buttons();
-    match span.unit() {
+    let label: String = match span.unit() {
         TimespanUnit::Seconds => tr.scheduling_answer_button_time_seconds(amount),
         TimespanUnit::Minutes => tr.scheduling_answer_button_time_minutes(amount),
         TimespanUnit::Hours => tr.scheduling_answer_button_time_hours(amount),
@@ -15,7 +15,10 @@ pub fn answer_button_time(seconds: f32, tr: &I18n) -> String {
         TimespanUnit::Months => tr.scheduling_answer_button_time_months(amount),
         TimespanUnit::Years => tr.scheduling_answer_button_time_years(amount),
     }
-    .into()
+    .into();
+    // Phase 0 marker: proves a Rust engine change propagates end-to-end to the
+    // desktop UI (answer-button labels). Safe to remove once verified.
+    format!("✦{label}")
 }
 
 /// Short string like '4d' to place above answer buttons.
@@ -182,9 +185,9 @@ mod test {
     #[test]
     fn answer_buttons() {
         let tr = I18n::template_only();
-        assert_eq!(answer_button_time(30.0, &tr), "30s");
-        assert_eq!(answer_button_time(70.0, &tr), "1m");
-        assert_eq!(answer_button_time(1.1 * MONTH, &tr), "1.1mo");
+        assert_eq!(answer_button_time(30.0, &tr), "✦30s");
+        assert_eq!(answer_button_time(70.0, &tr), "✦1m");
+        assert_eq!(answer_button_time(1.1 * MONTH, &tr), "✦1.1mo");
     }
 
     #[test]

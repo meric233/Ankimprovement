@@ -66,6 +66,62 @@ class RefreshNeeded(Enum):
     FLAG = auto()
 
 
+# USMLE project: SPOV2 difficulty-gated font randomization.
+#
+# On *easy* cards (low FSRS difficulty) we swap the card's font to a
+# noticeably-different, slightly-harder-to-read face. This strips the
+# "environmental cue" of a familiar font and adds a small desirable difficulty
+# that forces deeper encoding. On hard cards we leave the default font alone
+# (extra visual load there backfires). Only cards that already have an FSRS
+# difficulty (i.e. have been reviewed at least once) are eligible; brand-new
+# cards keep the default font.
+#
+# Fonts are expressed as CSS font stacks ending in a generic family
+# (cursive / fantasy / monospace) so that *something* clearly different from the
+# default sans-serif renders on every platform (desktop, macOS, Linux, Android),
+# even when a specific named face isn't installed.
+USMLE_FONT_DIFFICULTY_THRESHOLD = 5.0
+USMLE_ALT_FONT_STACKS: list[str] = [
+    # Handwriting / comic — playful and a little harder to skim.
+    "'Comic Sans MS', 'Comic Neue', 'Chalkboard SE', 'Chilanka', cursive",
+    # Typewriter / monospace — even letter spacing changes the shape a lot.
+    "'Courier New', 'Courier', 'DejaVu Sans Mono', monospace",
+    # Decorative / fantasy — clearly not the usual body font.
+    "'Papyrus', 'Herculanum', 'Luminari', fantasy",
+    # Script / cursive — connected strokes, deliberately less familiar.
+    "'Brush Script MT', 'Segoe Script', 'Snell Roundhand', cursive",
+]
+
+
+def usmle_pick_alt_font_stack() -> str:
+    """Pick a random alternate font stack (see USMLE_ALT_FONT_STACKS)."""
+    return random.choice(USMLE_ALT_FONT_STACKS)
+
+
+def usmle_font_override_js(font_stack: str | None) -> str:
+    """JS that installs/updates a <style> forcing the card font, or clears it.
+
+    We target the card content via a head <style> using !important so it wins
+    over the note type's own `.card { font-family: ... }`. Because the rule
+    lives in <head> (not inside #qa), it survives the innerHTML swap that
+    _updateQA performs, so it can be evaluated independently of card render
+    order. Passing ``None`` clears any previous override.
+    """
+    css = ""
+    if font_stack:
+        css = f"#qa, #qa .card {{ font-family: {font_stack} !important; }}"
+    return f"""(function() {{
+    var id = 'usmleFontOverride';
+    var el = document.getElementById(id);
+    if (!el) {{
+        el = document.createElement('style');
+        el.id = id;
+        document.head.appendChild(el);
+    }}
+    el.textContent = {json.dumps(css)};
+}})();"""
+
+
 class ReviewerBottomBar:
     def __init__(self, reviewer: Reviewer) -> None:
         self.reviewer = reviewer
@@ -169,6 +225,9 @@ class Reviewer:
         self._show_question_timer: QTimer | None = None
         self._show_answer_timer: QTimer | None = None
         self.auto_advance_enabled = False
+        # USMLE project: font chosen for the current card, reused for its answer
+        # side so the question and answer share one face. (card_id, font_stack)
+        self._usmle_font: tuple[CardId, str | None] | None = None
         gui_hooks.av_player_did_end_playing.append(self._on_av_player_did_end_playing)
 
     def show(self) -> None:
@@ -369,6 +428,37 @@ class Reviewer:
     def _mungeQA(self, buf: str) -> str:
         return self.typeAnsFilter(self.mw.prepare_card_text_for_display(buf))
 
+    # USMLE project: SPOV2 difficulty-gated font randomization
+    ##########################################################################
+
+    def _usmle_learning_mode(self) -> bool:
+        "True when the shared study-mode toggle is in long-term learning mode."
+        return self.mw.col.get_config("usmleStudyMode", "learning") == "learning"
+
+    def _usmle_font_for_card(self, card: Card, *, reroll: bool) -> str | None:
+        """Font stack for this card, or None to keep the default.
+
+        Picks a new random font on the question side (``reroll``) and reuses it
+        on the answer side so both card sides share one face.
+        """
+        if not self._usmle_learning_mode():
+            return None
+        state = card.memory_state
+        # Only reviewed cards have an FSRS difficulty; new cards keep default.
+        if state is None:
+            return None
+        if state.difficulty >= USMLE_FONT_DIFFICULTY_THRESHOLD:
+            return None
+        if not reroll and self._usmle_font and self._usmle_font[0] == card.id:
+            return self._usmle_font[1]
+        font = usmle_pick_alt_font_stack()
+        self._usmle_font = (card.id, font)
+        return font
+
+    def _apply_usmle_font(self, card: Card, *, reroll: bool) -> None:
+        font = self._usmle_font_for_card(card, reroll=reroll)
+        self.web.eval(usmle_font_override_js(font))
+
     def _showQuestion(self) -> None:
         self._reps += 1
         self.state = "question"
@@ -398,6 +488,7 @@ class Reviewer:
         self.web.eval(
             f"_showQuestion({json.dumps(q)}, {json.dumps(a)}, '{bodyclass}');"
         )
+        self._apply_usmle_font(c, reroll=True)
         self._update_flag_icon()
         self._update_mark_icon()
         self._showAnswerButton()
@@ -479,6 +570,7 @@ class Reviewer:
         a = gui_hooks.card_will_show(a, c, "reviewAnswer")
         # render and update bottom
         self.web.eval(f"_showAnswer({json.dumps(a)});")
+        self._apply_usmle_font(c, reroll=False)
         self._showEaseButtons()
         self.mw.web.setFocus()
         # user hook
