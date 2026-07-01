@@ -80,6 +80,14 @@ impl Collection {
         let last_review = TimestampSecs(now.0 - elapsed_days.max(0) * SECS_PER_DAY);
 
         let interval = elapsed_days.max(1) as u32;
+        // Review-card `due` is a day number (days since collection creation), not
+        // the new-card position the card currently carries. The card was last
+        // reviewed `elapsed_days` ago with scheduling interval `interval`, so its
+        // next due day is `today - elapsed_days + interval` (≈ today). Without
+        // this, converted cards keep their huge new-card position as `due` and
+        // never come due, no matter how many days we advance.
+        let today = self.timing_today()?.days_elapsed as i32;
+        let due = today - elapsed_days.max(0) as i32 + interval as i32;
         // Base for synthetic revlog ids (ms). Offset per card keeps them unique.
         let revlog_base = TimestampMillis::now().0;
 
@@ -100,6 +108,7 @@ impl Collection {
                     card.reps = 1;
                 }
                 card.interval = interval;
+                card.due = due;
                 card.last_review_time = Some(last_review);
                 col.update_card_inner(&mut card, original, usn)?;
 
@@ -232,6 +241,23 @@ mod test {
         let elapsed = card.seconds_since_last_review(&timing).unwrap_or_default();
         let r = fsrs.current_retrievability_seconds(state.into(), elapsed, FSRS5_DEFAULT_DECAY);
         assert!((r - 0.8).abs() < 0.05, "expected ~0.8, got {r}");
+    }
+
+    #[test]
+    fn set_fsrs_makes_card_due_now() {
+        let mut col = Collection::new();
+        let cid = add_card(&mut col);
+        // Target recall = desired retention (0.9): next due day should be today.
+        set_fsrs(&mut col, 30.0, 5.0, 0.9);
+
+        let today = col.timing_today().unwrap().days_elapsed as i32;
+        let card = col.storage.get_card(cid).unwrap().unwrap();
+        assert_eq!(card.queue, CardQueue::Review);
+        assert!(
+            card.due <= today,
+            "review card should be due now: due={} today={today}",
+            card.due
+        );
     }
 
     #[test]
