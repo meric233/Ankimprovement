@@ -1,0 +1,20 @@
+{
+  "_comment": "Held-out evaluation set for the AI rephrasing feature (PRD 9a/9C). These are synthetic USMLE Step 1-style Q/A pairs authored for evaluation only. They are NOT drawn from the study deck and are NOT used to train or fine-tune anything (we call a frozen OpenAI model), so there is no training corpus to leak into. rephrase_leakage_check.py confirms these fixtures are disjoint from the deck.",
+  "items": [
+    {"id": "q01", "question": "What enzyme is deficient in classic phenylketonuria?", "answer": "Phenylalanine hydroxylase"},
+    {"id": "q02", "question": "Which vitamin deficiency causes Wernicke encephalopathy?", "answer": "Thiamine (B1)"},
+    {"id": "q03", "question": "What is the most common cause of bacterial meningitis in neonates?", "answer": "Group B Streptococcus"},
+    {"id": "q04", "question": "Which antibody is most specific for systemic lupus erythematosus?", "answer": "Anti-dsDNA"},
+    {"id": "q05", "question": "What ion channel is defective in cystic fibrosis?", "answer": "CFTR chloride channel"},
+    {"id": "q06", "question": "Which neurotransmitter is decreased in Parkinson disease?", "answer": "Dopamine"},
+    {"id": "q07", "question": "What is the inheritance pattern of Duchenne muscular dystrophy?", "answer": "X-linked recessive"},
+    {"id": "q08", "question": "Which cytokine is the main mediator of septic shock?", "answer": "Tumor necrosis factor alpha (TNF-alpha)"},
+    {"id": "q09", "question": "What is the rate-limiting enzyme of cholesterol synthesis?", "answer": "HMG-CoA reductase"},
+    {"id": "q10", "question": "Which cranial nerve is responsible for the efferent limb of the corneal reflex?", "answer": "Facial nerve (CN VII)"},
+    {"id": "q11", "question": "What is the most common primary malignant tumor of bone in young patients?", "answer": "Osteosarcoma"},
+    {"id": "q12", "question": "Which electrolyte abnormality causes peaked T waves on ECG?", "answer": "Hyperkalemia"},
+    {"id": "q13", "question": "What organism is associated with rice-water stool diarrhea?", "answer": "Vibrio cholerae"},
+    {"id": "q14", "question": "Which clotting factor is deficient in hemophilia B?", "answer": "Factor IX"},
+    {"id": "q15", "question": "What is the first-line treatment for acute anaphylaxis?", "answer": "Intramuscular epinephrine"}
+  ]
+}

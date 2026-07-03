@@ -92,6 +92,18 @@ class AdminSimulationDialog(QDialog):
         self.retrievability.setValue(90)
         fsrs_form.addRow("Retrievability now (R):", self.retrievability)
 
+        # USMLE project: also set the per-card performance score (1-100). 0 =
+        # leave unchanged. Set cards count toward the Performance signal and the
+        # performance-based Readiness score.
+        self.performance = QSpinBox()
+        self.performance.setRange(0, 100)
+        self.performance.setValue(0)
+        self.performance.setToolTip(
+            "Per-card performance score (1-100). 0 = leave unchanged. Setting it "
+            "marks the card as scored for the Performance / Readiness dashboard."
+        )
+        fsrs_form.addRow("Performance (0 = skip):", self.performance)
+
         self.fsrs_percent = QSpinBox()
         self.fsrs_percent.setRange(1, 100)
         self.fsrs_percent.setSuffix(" %")
@@ -152,6 +164,7 @@ class AdminSimulationDialog(QDialog):
         stability = self.stability.value()
         difficulty = self.difficulty.value()
         target_r = self.retrievability.value() / 100.0
+        performance = self.performance.value()
 
         percent = self.fsrs_percent.value()
         sample = 0 if percent >= 100 else percent
@@ -163,13 +176,15 @@ class AdminSimulationDialog(QDialog):
                 difficulty=difficulty,
                 target_retrievability=target_r,
                 sample_percent=sample,
+                performance=performance,
             )
 
         def on_success(updated: int) -> None:
             scope = "" if sample == 0 else f" (random {percent}%)"
+            perf_note = "" if performance == 0 else f", performance={performance}"
             msg = (
-                f"Set S={stability:g}d, D={difficulty:g}, R={target_r:.0%} "
-                f"on {updated} cards{scope}."
+                f"Set S={stability:g}d, D={difficulty:g}, R={target_r:.0%}"
+                f"{perf_note} on {updated} cards{scope}."
             )
             self.status.setText(msg)
             tooltip(msg, parent=self)

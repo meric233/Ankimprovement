@@ -29,6 +29,7 @@ pub(super) const MATURE_INTERVAL_DAYS: u32 = 21;
 #[derive(Default)]
 struct TopicAccumulator {
     total_cards: u32,
+    cards_seen: u32,
     cards_mastered: u32,
     recall_sum: f64,
 }
@@ -89,9 +90,13 @@ impl Collection {
             card_topics.sort_unstable();
             card_topics.dedup();
 
+            let seen = card.reps > 0;
             for topic in card_topics {
                 let acc = topics.entry(topic).or_default();
                 acc.total_cards += 1;
+                if seen {
+                    acc.cards_seen += 1;
+                }
                 if mastered {
                     acc.cards_mastered += 1;
                 }
@@ -110,6 +115,7 @@ impl Collection {
                 } else {
                     0.0
                 },
+                cards_seen: acc.cards_seen,
             })
             .collect();
         // Deterministic, dashboard-friendly ordering.

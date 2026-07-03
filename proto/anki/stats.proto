@@ -60,6 +60,9 @@ message TopicMastery {
   // Mean FSRS retrievability (0..1) across all cards in the topic;
   // new/unseen cards (no memory state) count as 0.
   float average_recall = 4;
+  // Cards in this topic that have been studied at least once (reps > 0).
+  // cards_seen / total_cards is the topic's coverage.
+  uint32 cards_seen = 5;
 }
 
 message MasteryByTopicResponse {
@@ -114,10 +117,55 @@ message DashboardCoverage {
 message DashboardReadiness {
   uint32 horizon_days = 1;
   float p_pass = 2;
+  // Readiness is a probability, so it carries no uncertainty band: range_low
+  // and range_high both mirror p_pass.
   float range_low = 3;
   float range_high = 4;
-  // Coverage-weighted mean projected recall feeding p_pass (unseen = 0).
+  // Expected exam correctness feeding p_pass = blended Performance x coverage.
   float mean_projected_recall = 5;
+}
+
+// One horizon of the blended Performance score (0 = today; others project
+// forward with no study). The uncertainty band comes from varying the
+// memory/card-performance weight pair from (0.85,0.15) to (0.65,0.35) around the
+// (0.75,0.25) mean.
+message DashboardPerformanceHorizon {
+  uint32 days = 1;
+  float mean = 2;
+  float range_low = 3;
+  float range_high = 4;
+}
+
+// Performance (USMLE project, Friday/AI): a blended "transfer under rephrasing"
+// signal = 0.75 * memory (FSRS retrievability) + 0.25 * card performance score.
+// The per-card performance score (custom_data key "perf", 1..100, default 50) is
+// nudged by the student's grade whenever an AI-rephrased version of the card is
+// answered. The weights are arbitrary (qualitative learning-science prior);
+// accurate weights require real held-out testing data. Abstains until > 50% of
+// outline cards have been rephrased & scored.
+message DashboardPerformance {
+  // True once > 50% of outline cards have a scored perf value.
+  bool available = 1;
+  // Today's (horizon 0) blended performance (0..1). Mirrors horizons[0].
+  float mean = 2;
+  // Today's uncertainty band, from ranging the weight pair (mirrors horizons[0]).
+  float range_low = 3;
+  float range_high = 4;
+  // Outline cards that have been performance-scored (have a "perf" value).
+  uint32 scored_cards = 5;
+  // Total outline cards considered.
+  uint32 total_cards = 6;
+  // Human-readable reasons shown while abstaining.
+  repeated string blocked_reasons = 7;
+  // Blended performance per requested horizon (today / +5d / +10d), each with a
+  // weight-derived uncertainty band.
+  repeated DashboardPerformanceHorizon horizons = 8;
+  // AI-off fallback: true when AI rephrasing is disabled, so there is no
+  // per-card performance signal and Performance is a compromised estimate
+  // (0.9 x Memory) rather than the blended signal.
+  bool degraded = 9;
+  // Caveat text to display when `degraded` is true.
+  string degraded_note = 10;
 }
 
 message StudyDashboardResponse {
@@ -137,6 +185,9 @@ message StudyDashboardResponse {
   repeated TopicMastery topics = 8;
   // Single best next thing to study (a topic), per the honesty rules.
   string next_best_topic = 9;
+  // In-app performance signal (from AI-rephrased-card answers). Always present;
+  // `available` is false (with reasons) until enough cards are scored.
+  DashboardPerformance performance = 10;
 }
 
 // ---- USMLE project: admin / simulation mode --------------------------------
@@ -156,6 +207,10 @@ message AdminSetFsrsRequest {
   // Randomly apply to this percentage (1..100) of the matched cards.
   // 0 or >=100 means "all matched cards".
   uint32 sample_percent = 5;
+  // Per-card performance score to set (custom_data "perf", 1..100). 0 means
+  // "leave performance unchanged". Setting it marks the card as scored so it
+  // counts toward the Performance signal and (performance-based) Readiness.
+  uint32 performance = 6;
 }
 
 message AdminAdvanceDaysRequest {

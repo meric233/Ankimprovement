@@ -24,3 +24,7 @@ ts/.svelte-kit
 docs/_build/
 docs/autoapi/
 .complexipy_cache
+
+# USMLE project: AI rephrasing local secrets (never commit API keys)
+/ai_secrets.json
+/qt/aqt/ai/local_config.json

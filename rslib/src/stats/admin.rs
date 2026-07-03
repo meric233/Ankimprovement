@@ -18,6 +18,7 @@ use rand::seq::SliceRandom;
 use crate::card::CardQueue;
 use crate::card::CardType;
 use crate::card::FsrsMemoryState;
+use crate::config::BoolKey;
 use crate::ops::Op;
 use crate::ops::OpOutput;
 use crate::prelude::*;
@@ -28,6 +29,38 @@ use crate::search::SortMode;
 
 const SECS_PER_DAY: i64 = 86_400;
 const MIN_STABILITY: f32 = 0.01;
+
+/// Set the per-card performance score (custom_data "perf", 1..100) on a card's
+/// serialized custom_data JSON, preserving any other keys. Kept tiny to stay
+/// within Anki's 100-byte custom_data limit.
+fn custom_data_with_perf(existing: &str, perf: f64) -> String {
+    let mut obj: serde_json::Map<String, serde_json::Value> = if existing.is_empty() {
+        serde_json::Map::new()
+    } else {
+        serde_json::from_str(existing).unwrap_or_default()
+    };
+    let clamped = (perf.clamp(1.0, 100.0) * 10.0).round() / 10.0;
+    obj.insert("perf".into(), serde_json::json!(clamped));
+    serde_json::to_string(&serde_json::Value::Object(obj)).unwrap_or_default()
+}
+
+/// Remove the per-card performance score ("perf") from a card's custom_data,
+/// preserving any other keys. Returns `""` when nothing else remains.
+fn custom_data_without_perf(existing: &str) -> String {
+    if existing.is_empty() {
+        return String::new();
+    }
+    let mut obj: serde_json::Map<String, serde_json::Value> = match serde_json::from_str(existing) {
+        Ok(map) => map,
+        Err(_) => return existing.to_string(),
+    };
+    obj.remove("perf");
+    if obj.is_empty() {
+        String::new()
+    } else {
+        serde_json::to_string(&serde_json::Value::Object(obj)).unwrap_or_default()
+    }
+}
 
 /// Randomly keep `percent` (1..100) of the cids. 0 or >=100 keeps them all.
 fn sample_cids(mut cids: Vec<CardId>, percent: u32) -> Vec<CardId> {
@@ -92,6 +125,15 @@ impl Collection {
         let revlog_base = TimestampMillis::now().0;
 
         self.transact(Op::Custom("Admin: set FSRS state".into()), |col| {
+            // FSRS must be enabled for the scheduler to *keep* the memory state
+            // we set below. If it's off, the first real answer runs the SM-2
+            // path (fsrs_next_states = None) and wipes memory_state back to None
+            // (scheduler/answering: card.memory_state = next.memory_state). The
+            // whole Memory/Performance/Readiness model is FSRS-based, so enabling
+            // it here keeps admin-driven simulation self-consistent.
+            if !col.get_config_bool(BoolKey::Fsrs) {
+                col.set_config_bool_inner(BoolKey::Fsrs, true)?;
+            }
             let mut updated = 0u32;
             for &cid in &cids {
                 let mut card = col.storage.get_card(cid)?.or_not_found(cid)?;
@@ -110,6 +152,14 @@ impl Collection {
                 card.interval = interval;
                 card.due = due;
                 card.last_review_time = Some(last_review);
+                // Optionally set the per-card performance score so admin can
+                // drive the Performance signal and performance-based Readiness.
+                // A set card is already a review card above ("viewed as
+                // reviewed"), so it counts toward the total performance score.
+                if req.performance > 0 {
+                    card.custom_data =
+                        custom_data_with_perf(&card.custom_data, req.performance as f64);
+                }
                 col.update_card_inner(&mut card, original, usn)?;
 
                 // Log one synthetic graded review so the dashboard's give-up rule
@@ -176,10 +226,35 @@ impl Collection {
             req.sample_percent,
         );
         let updated = cids.len() as u32;
-        let out = self.reschedule_cards_as_new(&cids, false, true, true, None)?;
+        let usn = self.usn()?;
+
+        // Collapse the reschedule + performance-clear into one undoable step.
+        let restore_point = self.add_custom_undo_step("Admin: reset cards".to_string());
+        self.reschedule_cards_as_new(&cids, false, true, true, None)?;
+
+        // Resetting a card to "new" must also drop its per-card performance
+        // score, otherwise the card keeps counting as "scored" in the
+        // Performance signal even though it has no reviews/coverage anymore.
+        self.transact(Op::Custom("Admin: clear performance".into()), |col| {
+            for &cid in &cids {
+                let mut card = col.storage.get_card(cid)?.or_not_found(cid)?;
+                if card.custom_data.is_empty() {
+                    continue;
+                }
+                let cleared = custom_data_without_perf(&card.custom_data);
+                if cleared != card.custom_data {
+                    let original = card.clone();
+                    card.custom_data = cleared;
+                    col.update_card_inner(&mut card, original, usn)?;
+                }
+            }
+            Ok(())
+        })?;
+
+        let changes = self.merge_undoable_ops(restore_point)?;
         Ok(OpOutput {
             output: AdminOpResponse { updated },
-            changes: out.changes,
+            changes,
         })
     }
 }
@@ -210,12 +285,23 @@ mod test {
     }
 
     fn set_fsrs(col: &mut Collection, stability: f32, difficulty: f32, r: f32) -> u32 {
+        set_fsrs_perf(col, stability, difficulty, r, 0)
+    }
+
+    fn set_fsrs_perf(
+        col: &mut Collection,
+        stability: f32,
+        difficulty: f32,
+        r: f32,
+        performance: u32,
+    ) -> u32 {
         col.admin_set_fsrs(&AdminSetFsrsRequest {
             search: String::new(),
             stability,
             difficulty,
             target_retrievability: r,
             sample_percent: 0,
+            performance,
         })
         .unwrap()
         .output
@@ -257,6 +343,32 @@ mod test {
             card.due <= today,
             "review card should be due now: due={} today={today}",
             card.due
+        );
+    }
+
+    #[test]
+    fn set_fsrs_enables_fsrs_so_answering_keeps_memory_state() {
+        // Repro of the reported bug: admin sets difficulty, the card reviews
+        // fine once, but after answering it the memory state vanished ("no FSRS
+        // memory state") because FSRS was disabled and the SM-2 answer path
+        // resets memory_state to None. admin_set_fsrs now enables FSRS.
+        let mut col = Collection::new();
+        let cid = add_card(&mut col);
+        set_fsrs(&mut col, 30.0, 4.0, 0.9);
+
+        assert!(
+            col.get_config_bool(BoolKey::Fsrs),
+            "admin_set_fsrs should enable the FSRS scheduler"
+        );
+
+        // Answer the now-due review card as a normal review.
+        let post = col.answer_good();
+        assert_eq!(post.card_id, cid);
+
+        let card = col.storage.get_card(cid).unwrap().unwrap();
+        assert!(
+            card.memory_state.is_some(),
+            "answering must preserve the FSRS memory state, not wipe it to None"
         );
     }
 
@@ -314,20 +426,65 @@ mod test {
         };
         assert!(!col.study_dashboard(&req()).unwrap().readiness_available);
 
-        let updated = set_fsrs(&mut col, 30.0, 5.0, 0.9);
+        // Set FSRS state AND a performance score, so all three give-up
+        // conditions (reviews, coverage, performance) are satisfied.
+        let updated = set_fsrs_perf(&mut col, 30.0, 5.0, 0.9, 70);
         assert_eq!(updated, 205);
         // One graded review logged per card.
         assert_eq!(col.storage.graded_review_count().unwrap(), 205);
 
-        // After: 205 reviews (>200) and full coverage (>50%) -> readiness shows
-        // both horizons, including the +5-day projection.
+        // After: 205 reviews (>200), full coverage (>50%), and all cards scored
+        // -> readiness shows its single performance-based pass probability.
         let resp = col.study_dashboard(&req()).unwrap();
         assert!(
             resp.readiness_available,
             "{:?}",
             resp.readiness_blocked_reasons
         );
+        // One readiness entry per requested horizon (req asks for [0, 5]).
         assert_eq!(resp.readiness.len(), 2);
+    }
+
+    #[test]
+    fn set_fsrs_can_set_performance_score() {
+        use anki_proto::stats::StudyDashboardRequest;
+
+        let mut col = Collection::new();
+        // The admin-set perf scores exercise the AI-on blended Performance, so
+        // enable AI (otherwise Performance falls back to the degraded estimate).
+        col.transact(Op::UpdateConfig, |col| {
+            col.set_config("aiRephraseEnabled", &true)?;
+            Ok(())
+        })
+        .unwrap();
+        let tag = "#AK_Step1_v11::#FirstAid::07_Cardiovascular::03_Physiology";
+        for _ in 0..10 {
+            add_tagged_card(&mut col, tag);
+        }
+        // Set S/D/R and a performance of 80 on all matched cards.
+        let updated = set_fsrs_perf(&mut col, 30.0, 5.0, 0.9, 80);
+        assert_eq!(updated, 10);
+
+        let resp = col
+            .study_dashboard(&StudyDashboardRequest {
+                search: String::new(),
+                tag_prefix: "#AK_Step1_v11::#FirstAid::".to_string(),
+                topic_depth: 1,
+                readiness_horizons_days: vec![0],
+                min_graded_reviews: 1,
+                min_coverage: 0.01,
+            })
+            .unwrap();
+        let perf = resp.performance.unwrap();
+        assert!(perf.available, "{:?}", perf.blocked_reasons);
+        assert_eq!(perf.scored_cards, 10);
+        // Blended performance today = 0.75*memory(~0.9) + 0.25*card_perf(0.8).
+        let mem0 = resp.memory.as_ref().unwrap().horizons[0].mean_recall as f64;
+        let expected = 0.75 * mem0 + 0.25 * 0.80;
+        assert!((perf.mean as f64 - expected).abs() < 1e-3, "mean was {}", perf.mean);
+        // Readiness (performance-based) is now available with one entry (req [0]).
+        assert!(resp.readiness_available, "{:?}", resp.readiness_blocked_reasons);
+        assert_eq!(resp.readiness.len(), 1);
     }
 
     #[test]
@@ -343,6 +500,7 @@ mod test {
                 difficulty: 5.0,
                 target_retrievability: 0.9,
                 sample_percent: 25,
+                performance: 0,
             })
             .unwrap()
             .output
@@ -357,6 +515,37 @@ mod test {
             }
         }
         assert_eq!(with_state, 25);
+    }
+
+    #[test]
+    fn reset_clears_performance_score() {
+        let mut col = Collection::new();
+        let cid = add_card(&mut col);
+        // Give the card FSRS state AND a performance score.
+        set_fsrs_perf(&mut col, 30.0, 5.0, 0.9, 80);
+        let card = col.storage.get_card(cid).unwrap().unwrap();
+        assert!(card.custom_data.contains("perf"), "{}", card.custom_data);
+
+        // Reset to new -> memory state gone AND perf cleared.
+        col.admin_reset_cards(&AdminResetCardsRequest {
+            search: String::new(),
+            sample_percent: 0,
+        })
+        .unwrap();
+
+        let card = col.storage.get_card(cid).unwrap().unwrap();
+        assert!(card.memory_state.is_none());
+        assert!(
+            !card.custom_data.contains("perf"),
+            "perf should be cleared on reset, got {}",
+            card.custom_data
+        );
+
+        // A single undo restores both the FSRS state and the perf score.
+        col.undo().unwrap();
+        let card = col.storage.get_card(cid).unwrap().unwrap();
+        assert!(card.memory_state.is_some());
+        assert!(card.custom_data.contains("perf"));
     }
 
     #[test]

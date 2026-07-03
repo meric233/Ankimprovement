@@ -1081,6 +1081,7 @@ class Collection(DeprecatedNamesMixin):
         difficulty: float,
         target_retrievability: float,
         sample_percent: int = 0,
+        performance: int = 0,
     ) -> int:
         """Dev/admin simulation: bulk-set FSRS state on matched cards.
 
@@ -1088,7 +1089,9 @@ class Collection(DeprecatedNamesMixin):
         last-review time so current retrievability equals
         ``target_retrievability`` (0-1). Undoable. Empty ``search`` = all cards.
         ``sample_percent`` (1-100) randomly applies to that fraction of the
-        matched cards; 0 means all of them. Returns the number of cards modified.
+        matched cards; 0 means all of them. ``performance`` (1-100) also sets the
+        per-card performance score (``custom_data["perf"]``); 0 leaves it
+        unchanged. Returns the number of cards modified.
         """
         return self._backend.admin_set_fsrs(
             search=search,
@@ -1096,6 +1099,7 @@ class Collection(DeprecatedNamesMixin):
             difficulty=difficulty,
             target_retrievability=target_retrievability,
             sample_percent=sample_percent,
+            performance=performance,
         )
 
     def admin_advance_days(self, *, search: str = "", days: int) -> int:

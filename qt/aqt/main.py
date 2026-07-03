@@ -242,6 +242,10 @@ class AnkiQt(QMainWindow):
         self.setupDeckBrowser()
         self.setupOverview()
         self.setupReviewer()
+        # USMLE project: register the (off-by-default) AI rephrasing hooks.
+        import aqt.ai.rephrase
+
+        aqt.ai.rephrase.init(self)
 
     def finish_ui_setup(self) -> None:
         "Actions that are deferred until after add-on loading."
@@ -662,6 +666,7 @@ class AnkiQt(QMainWindow):
             self.update_undo_actions()
             gui_hooks.collection_did_load(self.col)
             self.apply_collection_options()
+            self._ensure_fsrs_enabled()
             self.moveToState("deckBrowser")
         except Exception:
             # dump error to stderr so it gets picked up by errors.py
@@ -737,6 +742,17 @@ class AnkiQt(QMainWindow):
         aqt.sound.av_player.interrupt_current_audio = self.col.get_config_bool(
             Config.Bool.INTERRUPT_AUDIO_WHEN_ANSWERING
         )
+
+    # USMLE project: this fork's Memory/Performance/Readiness model is built
+    # entirely on FSRS retrievability. Anki ships with FSRS OFF (SM-2 is the
+    # default scheduler); with it off, answering a card never writes
+    # `memory_state`, so cards show "no FSRS memory state", the dashboard has no
+    # recall to read, and the AI-rephrase difficulty gate can never pass. So we
+    # force FSRS on for this fork. ("fsrs" is the plain config key the Rust
+    # scheduler reads via BoolKey::Fsrs; it is not in the Config.Bool enum.)
+    def _ensure_fsrs_enabled(self) -> None:
+        if self.col and not self.col.get_config("fsrs", False):
+            self.col.set_config("fsrs", True)
 
     # Auto-optimize
     ##########################################################################
@@ -1352,6 +1368,29 @@ title="{}" {}>{}</button>""".format(
             return
         self.col.set_config("usmleStudyMode", "learning" if checked else "performance")
 
+    # USMLE project: AI rephrasing (Friday / PRD §9a). Off by default; the app
+    # scores fine with it off. Only rephrases in long-term learning mode on
+    # easy (FSRS difficulty < 5) cards. Stored in collection config.
+    def _ai_rephrase_enabled(self) -> bool:
+        return bool(self.col and self.col.get_config("aiRephraseEnabled", False))
+
+    def _sync_ai_rephrase_menu(self) -> None:
+        self.actionAiRephrase.setChecked(self._ai_rephrase_enabled())
+
+    def onToggleAiRephrase(self, checked: bool) -> None:
+        if not self.col:
+            return
+        self.col.set_config("aiRephraseEnabled", checked)
+        if checked:
+            # Kick off the held-out eval now so its accuracy / wrong-answer rate
+            # print to the terminal before the student sees any rephrase.
+            try:
+                from aqt.ai import rephrase
+
+                rephrase.trigger_preflight(self, force=True)
+            except Exception:  # noqa: BLE001 — never block the toggle
+                pass
+
     def onPrefs(self) -> None:
         aqt.dialogs.open("Preferences", self)
 
@@ -1503,6 +1542,18 @@ title="{}" {}>{}</button>""".format(
         m.menuTools.addSeparator()
         m.menuTools.addAction(self.actionLearningMode)
         qconnect(m.menuTools.aboutToShow, self._sync_study_mode_menu)
+
+        # Tools > USMLE project: AI rephrasing (Friday, off by default).
+        self.actionAiRephrase = QAction(self)
+        self.actionAiRephrase.setText("AI: rephrase cards (experimental)")
+        self.actionAiRephrase.setToolTip(
+            "On: AI rewords the question of easy cards on reappearance (long-term "
+            "learning mode only). Off by default; the app scores fine with AI off."
+        )
+        self.actionAiRephrase.setCheckable(True)
+        qconnect(self.actionAiRephrase.toggled, self.onToggleAiRephrase)
+        m.menuTools.addAction(self.actionAiRephrase)
+        qconnect(m.menuTools.aboutToShow, self._sync_ai_rephrase_menu)
 
         # Tools > USMLE project: Admin / simulation mode (dev tooling)
         self.actionAdminMode = QAction(self)
