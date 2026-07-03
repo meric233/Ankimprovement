@@ -12,7 +12,6 @@ from __future__ import annotations
 import aqt
 import aqt.main
 from anki.decks import DeckId, FilteredDeckConfig
-from anki.scheduler import FilteredDeckForUpdate
 from aqt.operations.scheduling import add_or_update_filtered_deck
 from aqt.qt import (
     QCloseEvent,

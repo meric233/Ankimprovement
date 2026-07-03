@@ -15,7 +15,6 @@ Run with the desktop sync server already listening on 27701:
 """
 
 import os
-import shutil
 import time
 
 from anki.collection import Collection

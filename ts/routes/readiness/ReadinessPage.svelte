@@ -438,14 +438,6 @@ License: GNU AGPL, version 3 or later; http://www.gnu.org/licenses/agpl.html
         opacity: 0.75;
         margin-top: 0.2rem;
     }
-    .decay {
-        margin-top: 0.5rem;
-        font-size: 0.9rem;
-    }
-    .decay .drop {
-        color: #c0392b;
-        font-weight: 600;
-    }
     .big.locked {
         opacity: 0.45;
         font-weight: 400;
