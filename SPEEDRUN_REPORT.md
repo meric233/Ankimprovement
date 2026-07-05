@@ -683,6 +683,86 @@ practice pass. AI-off behavior is unaffected (feature is off by default).
 
 ---
 
+## 14. Demo video script (3–5 min shot-list)
+
+Goal per the instructor: **show the product, not the idea**; walk the full
+experience; highlight what changed since the MVP; and make every claim easy to
+verify. Record in this order. Times are targets (total ≈ 4:30). *(V)* = what to
+say, *(S)* = what's on screen, *(proof)* = evidence to point at.
+
+**Pre-flight (before hitting record):**
+- Local sync server up: `SYNC_USER1=test:test SYNC_PORT=27701 ./run --syncserver`.
+- Desktop app up (`./run`) and Android emulator/phone with the app installed,
+  both logged into the local server (`test`/`test`, endpoint `127.0.0.1:27701`).
+- AI key present (`ai_secrets.json` desktop / `local.properties` at APK build)
+  so rephrasing is live; **Long-term learning mode** ON.
+- A terminal window visible for the eval/sync commands.
+
+**0:00–0:20 — What it is (and the one-engine claim).** *(V)* "A USMLE Step 1
+study app: a fork of Anki where desktop and phone share **one Rust engine**, plus
+an AI layer we added." *(S)* desktop deck browser + phone side-by-side.
+*(proof)* mention the shared backend AAR (§3).
+
+**0:20–0:55 — Since the MVP (what's new).** *(V)* "The MVP was plain Anki review
+on both platforms. Since then we added four things: (1) AI question-rephrasing,
+(2) a Memory/Performance/Readiness dashboard with a coverage-based give-up rule,
+(3) a new Rust mastery-by-topic query, and (4) an in-app eval that gates the AI."
+*(S)* open the **Readiness** screen so the dashboard is visible while you say this.
+
+**0:55–2:05 — The headline feature: AI rephrasing.**
+- *(S)* Turn on **Tools → AI: rephrase cards**. *(V)* note it's **off by default**
+  and only fires in long-term mode on low-difficulty cards.
+- *(S)* Review an eligible card **twice**: first appearance shows the reworded
+  question; re-appears with the **same** rewording. *(V)* "Same meaning, different
+  sentence structure — this strips the memorized-wording cue and forces
+  re-encoding." *(proof)* point at a card where wording changed but the answer/
+  drug/number is identical.
+- *(V)* "Every rephrase is **traced to its source card** — note id + SHA-256 of the
+  original text + model — so nothing is invented." *(proof)* §7f-AI source-tracing.
+- *(S)* Answer it; *(V)* "the per-card **Performance** score nudges, and FSRS memory
+  change is **damped to 0.5×** on rephrased answers." Rate one **Easy** and show the
+  next appearance gets a **fresh** rewording (cache invalidation).
+
+**2:05–2:45 — Dashboard: Memory / Performance / Readiness.** *(S)* the Readiness
+screen. *(V)* "Three **separate** numbers: Memory = FSRS recall with a confidence
+interval; Performance = 0.75·memory + 0.25·card-performance; Readiness = that ×
+coverage, mapped through a calibration curve." Show the **coverage map** and the
+least-covered row; click **▶ Review** and **📚 Learn least-covered topic**. *(V)*
+"Below 50% coverage it **abstains** instead of guessing — the give-up rule."
+
+**2:45–3:15 — Same feature, native on the phone.** *(S)* on the emulator/phone,
+open the nav drawer → toggle **AI: rephrase cards** and **Long-term learning
+mode**; review a card and show the rephrase + the phone Readiness screen. *(V)*
+"Identical feature, re-implemented natively in Kotlin — not just synced data."
+
+**3:15–3:45 — Sync (record this live).** *(S)* review a couple of cards on the
+phone → tap sync; on desktop tap sync → the same reviews appear. *(V)* "Reviews
+merge as an additive union; card state is last-writer-wins by mtime." *(proof)*
+cut to the terminal and run `PYTHONPATH=out/pylib:out/qt out/pyenv/bin/python
+sync_verify.py` — show `PART 1 PASS` / `PART 2 PASS`.
+
+**3:45–4:20 — Evidence / evals (the verify-it part).** In the terminal, show:
+- `rephrase_eval.py --live` → answer-preservation 100%, wrong-rate 0%,
+  effective-rephrasing ~80%, **AI > baseline** — the held-out eval **with a baseline**.
+- The **in-app preflight** line in the app log (`PREFLIGHT RESULT: PASS …`) — *(V)*
+  "students are never shown an unvetted rephrase; the eval runs first and gates it."
+- `rephrase_leakage_check.py` → **CLEAN**.
+- `perf_bench.py --cards 50000` (or the numbers in §7h) → all latency budgets met.
+
+**4:20–4:30 — Honesty + close.** *(V)* "One caveat: the **memory/performance
+calibration and the study-feature ablation numbers are simulated** — the pipelines
+are real and re-runnable, but we don't have real held-out student data yet, so
+those are process, not proof. Everything else — sync, leakage, the AI held-out
+eval, and the benchmarks — is measured." Close on the released builds
+(desktop `.dmg` + Android APK, `v0.2.0-usmle-ai`).
+
+**Do / don't:** *do* keep the terminal visible when you claim a number; *do* say
+"simulated" out loud for §9-SIM items. *Don't* present the calibration table as
+measured, and *don't* leave AI on for a card outside the gate (it'll just show the
+original, which is correct but undemo-worthy).
+
+---
+
 *Anchored to "Speedrun — A Desktop + Mobile Study App Built on Anki." Status as of
 the Wednesday (Phase 1, no-AI) milestone; Friday (AI) and Sunday (proofs) items are
 marked ⬜/🟡 above.*
