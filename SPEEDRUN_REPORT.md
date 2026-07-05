@@ -18,7 +18,7 @@ justification, and the tests/proof. Detailed docs are linked, not duplicated.
   crash test (20/20 clean) and 50k-card speed benchmark are **real and passing**
   (§7g, §7h); memory-calibration, performance/paraphrase, and the study-feature
   ablation are **simulated on fake data** (§9-SIM, clearly fenced) pending real
-  held-out students. Recordings/demo video and signed APK still outstanding.
+  held-out students. Signed release APK built (§12b); recordings/demo video still outstanding.
 
 Key source docs: [`PHASE1_SUMMARY.md`](PHASE1_SUMMARY.md) ·
 [`PHASE2_SUMMARY.md`](PHASE2_SUMMARY.md) (Friday AI feature) ·
@@ -236,15 +236,16 @@ drive topic granularity and the coverage map.
 ### Due Sunday — prove it, ship both
 | Item | Status |
 |---|---|
-| Memory calibrated (calibration chart + Brier/log-loss on held-out) | 🟡 **simulated** — §9-SIM (pipeline + metrics done on **fake** data; real held-out pending) |
+| Memory calibrated (calibration chart + Brier/log-loss on held-out) | 🟡 **simulated** — §9-SIM (pipeline + metrics + reliability table inlined on **fake** data; real held-out pending) |
 | Performance model accuracy on held-out questions | 🟡 **simulated** — §9-SIM |
 | Score mapping written down | 🟡 (v1 correctness→P(pass) curve documented in §4; Readiness is a point probability by design — no range; not yet fitted/validated) |
 | Study feature 3-build ablation, equal time | 🟡 **simulated** — §9-SIM / §8 (fake-data ablation with pre-stated H1 + negatives) |
 | Honest reporting incl. negative results | 🟡 **simulated** — §9-SIM reports null + time-cost results |
-| Packaged desktop installer + **signed** phone build | 🟡 (desktop `.dmg` ✅ unsigned; APK debug only) |
+| Generation-forcing (SPOV4, optional) | ⬜ — optional; not built (AI rephrasing was chosen as the AI feature instead) |
+| Packaged desktop installer + **signed** phone build | ✅ (desktop `.dmg` — `out/installer/dist/anki-26.05-mac-intel.dmg`, unsigned/un-notarized; **signed release APK built & verified** via `assemblePlayRelease` with our own keystore — see §12b) |
 | Sync conflict handling correct + documented | ✅ — §7b |
 | Both apps run AI-off and still score | ✅ |
-| **Proof:** results report, model descriptions, Brainlift, clean-device recordings | ⬜ |
+| **Proof:** results report, model descriptions, Brainlift, clean-device recordings | 🟡 — results report = this doc (sim results inlined §9-SIM); model descriptions §4/§12; Brainlift PDF present; **demo video + clean-device recordings ⬜** |
 
 ---
 
@@ -307,9 +308,11 @@ fine-tuning), so there is no training corpus for a test item to leak into; the
 15 held-out fixtures are internally unique and are authored separately from the
 study deck (the script can also scan a real collection via `--collection`).
 
-### 7f. The AI card check ⬜ (Sunday)
-Not built — gold set of 50 Q&A + generate-50-and-check with a pre-set cutoff.
-(This is for *card generation*; our chosen AI feature is *rephrasing* — §7f-AI.)
+### 7f. The AI card check — N/A (rephrasing, not generation)
+Our AI feature is question **rephrasing** (§7f-AI), not card *generation*, so the
+50-pair generation gold set does not apply. The equivalent AI-output check is the
+**held-out rephrasing eval** (answer-preservation / wrong-rate / effective-rephrasing
+against a pre-declared cutoff, beating a baseline) documented in §7f-AI.
 
 ### 7f-AI. The AI feature — rephrasing card questions ✅ (Friday)
 **What / why / skipped.** Chosen AI feature = **AI rephrasing of a card's
@@ -518,13 +521,28 @@ We do **not** yet have real held-out student data. Per the instructor's guidance
 `simulated_studies.py` **simulates the full evaluation process on synthetic data**
 so the pipelines, metrics, and report format are in place and re-runnable — the
 numbers are **illustrative, not measured**. Deterministic (`--seed`, default 2026).
-Run: `out/pyenv/bin/python simulated_studies.py`.
+Run: `out/pyenv/bin/python simulated_studies.py`. The full sample run (seed 2026)
+is reproduced inline below, so everything lives in this one report.
 
 - **1. Memory calibration (SIMULATED):** 3 000 synthetic held-out reviews →
-  **Brier 0.187**, **log-loss 0.558**, **ECE 0.039**; the reliability table shows
-  a near-diagonal fit with **mild over-confidence at high R** (e.g. band 0.7–0.8
+  **Brier 0.187**, **log-loss 0.558**, **ECE 0.039**; the reliability table below
+  shows a near-diagonal fit with **mild over-confidence at high R** (band 0.7–0.8
   predicts 0.754 vs observed 0.693), motivating the documented Platt/temperature
   recalibration.
+
+```
+reliability table (predicted band -> observed recall):
+  band        n     mean_pred   observed
+  0.1-0.2       2      0.186      0.000
+  0.2-0.3      10      0.267      0.400
+  0.3-0.4      28      0.365      0.393
+  0.4-0.5     130      0.457      0.485
+  0.5-0.6     277      0.555      0.563
+  0.6-0.7     503      0.653      0.632
+  0.7-0.8     760      0.754      0.693
+  0.8-0.9     812      0.848      0.803
+  0.9-1.0     478      0.935      0.902
+```
 - **2. Performance model + paraphrase gap (SIMULATED, §7d):** 30 cards × (1
   original + 2 reworded) → recall **0.767 original vs 0.650 reworded**,
   **paraphrase gap +0.117** — the memorized-wording effect the rephrasing feature
@@ -587,9 +605,72 @@ start (only the engine open is instrumented here).
   Rust note + touched-files list)** 🟡 — repos public, exam/build/Rust-note/files
   done; a single architecture overview = this doc.
 - **Demo video (3–5 min)** ⬜.
-- **Model descriptions (memory / performance / readiness + give-up rule)** 🟡 —
-  memory + readiness described here; performance pending.
+- **Model descriptions (memory / performance / readiness + give-up rule)** ✅ —
+  all three plus the give-up rule are described in **§4** (Memory = mean FSRS R
+  with CI; Performance = `0.75·memory + 0.25·card-perf` with a weight-band range
+  and the AI-off `0.9·memory` fallback; Readiness = correctness × coverage mapped
+  through the calibration curve; give-up gate = ≥ 200 reviews ∧ ≥ 50% coverage ∧
+  Performance available).
 - **Brainlift** 🟡 — see `Brainlift - Week2 - Meric - AI Rephrased.pdf`.
+
+### 12b. Packaged phone build (APK) 🟡
+
+The installable phone build is the **debug-signed** `play` APK produced by
+`./gradlew :AnkiDroid:assemblePlayDebug` (app id `com.ichi2.anki.debug`). The
+build emits **per-ABI splits** under `AnkiDroid/build/outputs/apk/play/debug/`:
+`AnkiDroid-play-arm64-v8a-debug.apk` (real phones / Apple-silicon emulators, 48 MB),
+`AnkiDroid-play-x86_64-debug.apk` (x86_64 emulator, 109 MB), plus `armeabi-v7a`
+and `x86`. They are signed with Android's debug keystore, so they **install on a
+clean device/emulator** (`adb install -r <apk>`) and run the AI feature when an
+`OPENAI_API_KEY` is present in `local.properties` at build time.
+
+**Release-signing (what to do).** `AnkiDroid/build.gradle` already has a
+`signingConfigs.release` block that reads a keystore from environment variables
+(falling back to a bundled public test keystore). To produce a **release APK
+signed with your own key**:
+
+1. **Create a keystore** (once; keep the file + passwords private, never commit):
+
+```bash
+keytool -genkeypair -v -keystore usmle-release.jks \
+  -alias usmle -keyalg RSA -keysize 2048 -validity 10000
+```
+
+2. **Point the build at it** via env vars (matching the gradle block):
+
+```bash
+export KEYSTOREPATH=/absolute/path/usmle-release.jks
+export KSTOREPWD='your-store-password'
+export KEYALIAS=usmle
+export KEYPWD='your-key-password'
+```
+
+3. **Build the signed release APK:**
+
+```bash
+./gradlew :AnkiDroid:assemblePlayRelease
+# → AnkiDroid/build/outputs/apk/play/release/AnkiDroid-play-*-release.apk
+```
+
+Gradle runs `zipalign` + `apksigner` automatically. Verify with
+`apksigner verify --print-certs <apk>`. For **sideloading / this project's
+practice hand-in** the debug-signed APK above is enough (it installs on any
+device). A **Play-Store** upload additionally needs Google **Play App Signing**
+(you upload with your key; Google re-signs with the app key). No keystore is
+committed — the fallback test keystore is for CI only and must not ship.
+
+**Status — done ✅.** A signed release build was produced with a project keystore
+(`usmle-release.jks`, kept outside both repos, self-signed practice key):
+`AnkiDroid/build/outputs/apk/play/release/AnkiDroid-play-{arm64-v8a,armeabi-v7a,x86,x86_64}-release.apk`
+(R8-minified, ~16 MB per phone ABI). `apksigner verify --print-certs` confirms
+`Signer #1 … CN=USMLE Step1 Fork, OU=Dev, O=Meric`. Producing the release variant
+required fixing 7 release-only `lintVital` findings in the USMLE code
+(`System.currentTimeMillis` suppressed with a rationale, `s`/`m`-prefixed locals
+renamed, and `maxLength="28"` added to the four USMLE menu-title strings); the
+debug APK skips `lintVital`, which is why it built without them.
+A **release keystore-signed** build (Play-store grade) is not set up this week —
+it needs a private signing keystore + `signingConfigs`, out of scope for the
+practice pass. AI-off behavior is unaffected (feature is off by default).
 
 ---
 
